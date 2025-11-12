@@ -1,0 +1,210 @@
+version: '3.8'
+
+services:
+  # Servicio principal - N8N EvolutionAPI CitaMedica Bridge
+  n8n-evolution-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: n8n-evolution-bridge
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - CITAMEDICA_API_URL=http://citamedica-backend:4001/api
+      - EVOLUTION_API_URL=http://evolution-api:8080
+      - N8N_WEBHOOK_URL=http://n8n:5678
+      - EVOLUTION_INSTANCE_NAME=citamedica-bot
+      - TIMEZONE=America/Argentina/Buenos_Aires
+      - LOG_LEVEL=info
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - n8n
+      - evolution-api
+      - citamedica-backend
+    restart: unless-stopped
+    networks:
+      - citamedica-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bridge.rule=Host(`bridge.localhost`)"
+      - "traefik.http.services.bridge.loadbalancer.server.port=3000"
+
+  # N8N - Workflow Automation Platform
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=admin123
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678
+      - N8N_METRICS=true
+      - N8N_LOG_LEVEL=info
+      - DB_TYPE=sqlite
+      - DB_SQLITE_DATABASE=/home/node/.n8n/database.sqlite
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./workflows:/home/node/.n8n/workflows:ro
+    restart: unless-stopped
+    networks:
+      - citamedica-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.n8n.rule=Host(`n8n.localhost`)"
+      - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+
+  # EvolutionAPI - WhatsApp API
+  evolution-api:
+    image: atendai/evolution-api:v2.0.0
+    container_name: evolution-api
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_PORT=8080
+      - SERVER_URL=http://localhost:8080
+      - CORS_ORIGIN=*
+      - CORS_METHODS=GET,POST,PUT,DELETE
+      - CORS_CREDENTIALS=true
+      - LOG_LEVEL=ERROR,WARN,DEBUG,INFO,LOG,VERBOSE,DARK,WEBHOOKS
+      - LOG_COLOR=true
+      - LOG_BAILEYS=false
+      - DEL_INSTANCE=false
+      - PROVIDER_ENABLED=false
+      - PROVIDER_HOST=127.0.0.1
+      - PROVIDER_PORT=5656
+      - PROVIDER_PREFIX=evolution
+      - WEBHOOK_GLOBAL_URL=http://n8n-evolution-bridge:3000/webhook/evolution
+      - WEBHOOK_GLOBAL_ENABLED=true
+      - WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS=false
+      - CONFIG_SESSION_PHONE_CLIENT=EvolutionAPI
+      - CONFIG_SESSION_PHONE_NAME=Chrome
+      - QRCODE_LIMIT=30
+      - AUTHENTICATION_TYPE=apikey
+      - AUTHENTICATION_API_KEY=citamedica_api_key_2024
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+      - LANGUAGE=es
+    volumes:
+      - evolution-data:/evolution/instances
+      - evolution-store:/evolution/store
+    restart: unless-stopped
+    networks:
+      - citamedica-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.evolution.rule=Host(`evolution.localhost`)"
+      - "traefik.http.services.evolution.loadbalancer.server.port=8080"
+
+  # CitaMedica Backend (conectar con el existente)
+  citamedica-backend:
+    image: citamedica-backend:latest  # Asume que ya tienes la imagen
+    container_name: citamedica-backend
+    ports:
+      - "4001:4001"
+    environment:
+      - NODE_ENV=production
+      - PORT=4001
+      - MONGODB_URI=mongodb://mongodb:27017/citamedica
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+    networks:
+      - citamedica-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`api.localhost`)"
+      - "traefik.http.services.backend.loadbalancer.server.port=4001"
+
+  # MongoDB - Base de datos
+  mongodb:
+    image: mongo:6.0
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=admin123
+      - MONGO_INITDB_DATABASE=citamedica
+    volumes:
+      - mongodb-data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    networks:
+      - citamedica-network
+
+  # Traefik - Reverse Proxy (opcional)
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--log.level=INFO"
+    ports:
+      - "80:80"
+      - "8080:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+    networks:
+      - citamedica-network
+    labels:
+      - "traefik.enable=true"
+
+  # Redis - Cache y sesiones (opcional)
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass redis123
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - citamedica-network
+
+  # Nginx - Servidor web para frontend (opcional)
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    ports:
+      - "8081:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./web:/usr/share/nginx/html:ro
+    restart: unless-stopped
+    networks:
+      - citamedica-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nginx.rule=Host(`web.localhost`)"
+      - "traefik.http.services.nginx.loadbalancer.server.port=80"
+
+volumes:
+  n8n-data:
+    driver: local
+  evolution-data:
+    driver: local
+  evolution-store:
+    driver: local
+  mongodb-data:
+    driver: local
+  redis-data:
+    driver: local
+
+networks:
+  citamedica-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

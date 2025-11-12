@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # Servicio principal simplificado para desarrollo
+  n8n-evolution-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: n8n-evolution-bridge-dev
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - CITAMEDICA_API_URL=http://host.docker.internal:4001/api
+      - EVOLUTION_API_URL=http://evolution-api:8080
+      - N8N_WEBHOOK_URL=http://n8n:5678
+      - EVOLUTION_API_KEY=citamedica_dev_key
+      - EVOLUTION_INSTANCE_NAME=citamedica-bot-dev
+      - TIMEZONE=America/Argentina/Buenos_Aires
+      - LOG_LEVEL=debug
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ./logs:/app/logs
+    depends_on:
+      - n8n
+      - evolution-api
+    restart: unless-stopped
+    networks:
+      - citamedica-dev
+
+  # N8N para desarrollo
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n-dev
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=false  # Sin auth para desarrollo
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678
+      - N8N_METRICS=true
+      - N8N_LOG_LEVEL=debug
+      - DB_TYPE=sqlite
+    volumes:
+      - n8n-dev-data:/home/node/.n8n
+      - ./workflows:/home/node/.n8n/workflows
+    restart: unless-stopped
+    networks:
+      - citamedica-dev
+
+  # EvolutionAPI para desarrollo
+  evolution-api:
+    image: atendai/evolution-api:latest
+    container_name: evolution-api-dev
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_PORT=8080
+      - SERVER_URL=http://localhost:8080
+      - CORS_ORIGIN=*
+      - LOG_LEVEL=DEBUG,INFO,WARN,ERROR
+      - LOG_COLOR=true
+      - DEL_INSTANCE=false
+      - WEBHOOK_GLOBAL_URL=http://n8n-evolution-bridge:3000/webhook/evolution
+      - WEBHOOK_GLOBAL_ENABLED=true
+      - AUTHENTICATION_TYPE=apikey
+      - AUTHENTICATION_API_KEY=citamedica_dev_key
+      - LANGUAGE=es
+    volumes:
+      - evolution-dev-data:/evolution/instances
+    restart: unless-stopped
+    networks:
+      - citamedica-dev
+
+volumes:
+  n8n-dev-data:
+  evolution-dev-data:
+
+networks:
+  citamedica-dev:
+    driver: bridge

@@ -1,0 +1,98 @@
+{
+  "name": "WhatsApp Bot Simple - Funcionando",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-bot",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-entrada",
+      "name": "Webhook WhatsApp",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "whatsapp-bot"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extraer datos del webhook de EvolutionAPI\nconst data = $input.all()[0].json;\n\nconsole.log('Datos recibidos:', JSON.stringify(data, null, 2));\n\n// Inicializar variables\nlet messageText = '';\nlet userNumber = '';\nlet userName = 'Usuario';\n\n// Extraer información del mensaje\ntry {\n  // Para EvolutionAPI v2.x\n  if (data.body && data.body.data) {\n    messageText = data.body.data.message?.conversation || \n                  data.body.data.message?.extendedTextMessage?.text || '';\n    userNumber = data.body.data.key?.remoteJid?.replace('@s.whatsapp.net', '') || '';\n    userName = data.body.data.pushName || 'Usuario';\n  }\n  // Fallback para otras estructuras\n  else if (data.data) {\n    messageText = data.data.message?.conversation || \n                  data.data.message?.extendedTextMessage?.text || '';\n    userNumber = data.data.key?.remoteJid?.replace('@s.whatsapp.net', '') || '';\n    userName = data.data.pushName || 'Usuario';\n  }\n  // Si no encuentra estructura, usar valores por defecto\n  else {\n    messageText = 'hola';\n    userNumber = '5493735507036';\n  }\n} catch (error) {\n  console.log('Error procesando datos:', error);\n  messageText = 'hola';\n  userNumber = '5493735507036';\n  userName = 'Usuario';\n}\n\n// Procesar el mensaje\nconst normalizedMessage = messageText.toLowerCase().trim();\n\nlet responseText = '';\n\nif (normalizedMessage.includes('hola') || normalizedMessage.includes('hi') || normalizedMessage === '') {\n  responseText = `🤖 ¡Hola ${userName}! 👋\\n\\nSoy Anita, tu asistente médica virtual.\\n\\n📋 ¿En qué puedo ayudarte?\\n\\n• Escribe \"cita\" para agendar\\n• Escribe \"menu\" para ver opciones`;\n} else if (normalizedMessage.includes('cita')) {\n  responseText = `📅 *Gestión de Citas*\\n\\nPara agendar una cita, necesito:\\n\\n👤 Tus datos:\\n• Nombre completo\\n• DNI\\n• Obra social\\n• Teléfono\\n\\n📅 Fecha preferida\\n\\nPor favor envía estos datos y te mostraré los horarios disponibles.`;\n} else if (normalizedMessage.includes('menu')) {\n  responseText = `📋 *Menú Principal*\\n\\n🏥 Servicios disponibles:\\n\\n• \"cita\" - Agendar nueva cita\\n• \"horarios\" - Ver horarios disponibles\\n• \"contacto\" - Información de contacto\\n• \"ayuda\" - Ayuda y soporte\\n\\n¿Qué necesitas hoy?`;\n} else if (normalizedMessage.includes('contacto')) {\n  responseText = `📞 *Información de Contacto*\\n\\n🏥 Clínica Médica\\n📍 Dirección: [Tu dirección]\\n☎️ Teléfono: [Tu teléfono]\\n🕒 Horarios: Lunes a Viernes 8:00-20:00\\n\\n💻 Web: https://micitamedica.me\\n📱 WhatsApp: Este número`;\n} else if (normalizedMessage.includes('horarios')) {\n  responseText = `🕒 *Horarios Disponibles*\\n\\n📅 Lunes a Viernes:\\n• Mañana: 8:00 - 12:00\\n• Tarde: 14:00 - 20:00\\n\\n📅 Sábados:\\n• Mañana: 8:00 - 12:00\\n\\n❌ Domingos: Cerrado\\n\\nPara agendar escribe \"cita\"`;\n} else {\n  responseText = `🤔 No entendí tu mensaje: \"${messageText}\"\\n\\n📋 Prueba escribir:\\n• \"hola\" para saludar\\n• \"menu\" para ver opciones\\n• \"cita\" para agendar\\n\\n¿En qué puedo ayudarte?`;\n}\n\n// Retornar datos para enviar\nreturn {\n  json: {\n    number: userNumber,\n    text: responseText,\n    originalMessage: messageText,\n    userName: userName\n  }\n};"
+      },
+      "id": "procesar-mensaje",
+      "name": "Procesar Mensaje",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://69.62.89.195:8080/message/sendText/test-9",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "apikey",
+              "value": "6ED32D1B9D3F-4EC9-B3FA-1BC82E369E34"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $json.number }}\",\n  \"text\": \"{{ $json.text }}\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "enviar-whatsapp",
+      "name": "Enviar a WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Webhook WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Procesar Mensaje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar Mensaje": {
+      "main": [
+        [
+          {
+            "node": "Enviar a WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-12T00:00:00.000Z",
+  "versionId": "1"
+}

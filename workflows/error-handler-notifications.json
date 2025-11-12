@@ -1,0 +1,309 @@
+{
+  "name": "Error Handler & Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "error-notification",
+        "options": {}
+      },
+      "id": "webhook-error",
+      "name": "Webhook - Error",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "error-notification"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.severity}}",
+              "value2": "high"
+            }
+          ]
+        }
+      },
+      "id": "if-high-severity",
+      "name": "¿Error crítico?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatear error para notificación\nconst errorData = $json;\nconst timestamp = new Date().toLocaleString('es-AR', {\n  timeZone: 'America/Argentina/Buenos_Aires'\n});\n\nconst errorMessage = `🚨 *ERROR CRÍTICO DETECTADO*\\n\\n` +\n  `⏰ **Fecha/Hora:** ${timestamp}\\n` +\n  `🔧 **Contexto:** ${errorData.context || 'No especificado'}\\n` +\n  `❌ **Error:** ${errorData.error}\\n` +\n  `📊 **Severidad:** ${errorData.severity}\\n\\n` +\n  `*Acción requerida:* Revisar sistema inmediatamente.`;\n\nreturn [{\n  json: {\n    message: errorMessage,\n    phone: process.env.ADMIN_PHONE || '5491234567890',\n    context: errorData.context,\n    severity: errorData.severity,\n    timestamp: timestamp\n  }\n}];"
+      },
+      "id": "format-critical-error",
+      "name": "Formatear error crítico",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.EVOLUTION_API_URL}}/message/sendText/{{$env.EVOLUTION_INSTANCE_NAME}}",
+        "sendBody": true,
+        "specifyHeaders": true,
+        "headers": {
+          "parameters": [
+            {
+              "name": "Authorization", 
+              "value": "Bearer {{$env.EVOLUTION_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "contentType": "json",
+        "body": "={\n  \"number\": \"{{$json.phone}}\",\n  \"text\": \"{{$json.message}}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "send-admin-notification",
+      "name": "Notificar administrador",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log del error en el sistema\nconst errorLog = {\n  timestamp: new Date().toISOString(),\n  severity: $json.severity || 'medium',\n  context: $json.context || 'unknown',\n  error: $json.error,\n  metadata: $json.metadata || {},\n  notified: $json.severity === 'high'\n};\n\nconsole.log('ERROR LOG:', JSON.stringify(errorLog, null, 2));\n\n// También podrías enviar a un servicio de logging como Sentry\n// o guardar en base de datos\n\nreturn [{ json: errorLog }];"
+      },
+      "id": "log-error",
+      "name": "Registrar error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "path": "health-check",
+        "options": {}
+      },
+      "id": "webhook-health",
+      "name": "Webhook - Health Check",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 600],
+      "webhookId": "health-check"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Health check response\nconst healthStatus = {\n  status: 'healthy',\n  timestamp: new Date().toISOString(),\n  service: 'N8N-EvolutionAPI-CitaMedica',\n  version: '1.0.0',\n  uptime: process.uptime(),\n  memory: process.memoryUsage()\n};\n\nreturn [{ json: healthStatus }];"
+      },
+      "id": "health-response",
+      "name": "Respuesta Health Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify($json)}}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.webhookResponse",
+      "typeVersion": 1,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "path": "reminder-trigger",
+        "options": {}
+      },
+      "id": "webhook-reminder",
+      "name": "Webhook - Reminder",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 800],
+      "webhookId": "reminder-trigger"
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "hours"
+      },
+      "id": "wait-1-hour",
+      "name": "Esperar 1 hora",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [460, 800]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Crear recordatorio de cita\nconst reminderData = $json;\nconst appointmentTime = new Date(reminderData.scheduledFor);\nconst now = new Date();\n\n// Verificar si la cita es en las próximas 2 horas\nconst timeDiff = appointmentTime - now;\nconst hoursUntil = timeDiff / (1000 * 60 * 60);\n\nif (hoursUntil > 0 && hoursUntil <= 2) {\n  const reminderMessage = `🔔 *RECORDATORIO DE CITA*\\n\\n` +\n    `Hola ${reminderData.patientName},\\n\\n` +\n    `Tu cita médica está programada en ${Math.round(hoursUntil * 60)} minutos:\\n\\n` +\n    `📅 **Fecha:** ${appointmentTime.toLocaleDateString('es-AR')}\\n` +\n    `⏰ **Hora:** ${appointmentTime.toLocaleTimeString('es-AR', {hour: '2-digit', minute: '2-digit'})}\\n` +\n    `🏥 **Recordatorio:** Llega 10 minutos antes\\n\\n` +\n    `¡Te esperamos! 🏥`;\n    \n  return [{\n    json: {\n      phone: reminderData.phone,\n      message: reminderMessage,\n      type: 'appointment_reminder'\n    }\n  }];\n}\n\n// Si no es tiempo de recordatorio, no enviar\nreturn [];"
+      },
+      "id": "create-reminder",
+      "name": "Crear recordatorio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 800]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.EVOLUTION_API_URL}}/message/sendText/{{$env.EVOLUTION_INSTANCE_NAME}}",
+        "sendBody": true,
+        "specifyHeaders": true,
+        "headers": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.EVOLUTION_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "contentType": "json",
+        "body": "={\n  \"number\": \"{{$json.phone}}\",\n  \"text\": \"{{$json.message}}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "send-reminder",
+      "name": "Enviar recordatorio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 800]
+    }
+  ],
+  "connections": {
+    "Webhook - Error": {
+      "main": [
+        [
+          {
+            "node": "¿Error crítico?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Registrar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Error crítico?": {
+      "main": [
+        [
+          {
+            "node": "Formatear error crítico",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Formatear error crítico": {
+      "main": [
+        [
+          {
+            "node": "Notificar administrador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Health Check": {
+      "main": [
+        [
+          {
+            "node": "Respuesta Health Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respuesta Health Check": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Reminder": {
+      "main": [
+        [
+          {
+            "node": "Esperar 1 hora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esperar 1 hora": {
+      "main": [
+        [
+          {
+            "node": "Crear recordatorio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear recordatorio": {
+      "main": [
+        [
+          {
+            "node": "Enviar recordatorio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Argentina/Buenos_Aires",
+    "saveExecutionProgress": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "staticData": {},
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "error-handling",
+      "name": "Error Handling"
+    },
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "notifications",
+      "name": "Notifications"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

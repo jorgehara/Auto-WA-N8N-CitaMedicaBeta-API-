@@ -1,0 +1,437 @@
+{
+  "name": "WhatsApp to CitaMedica - Complete Flow",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "whatsapp-message",
+        "options": {}
+      },
+      "id": "webhook-whatsapp",
+      "name": "Webhook - WhatsApp Message",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "whatsapp-message"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.message}}",
+              "operation": "contains",
+              "value2": "cita"
+            }
+          ]
+        }
+      },
+      "id": "if-appointment-request",
+      "name": "¿Es solicitud de cita?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.message}}",
+              "operation": "contains", 
+              "value2": "sobreturno"
+            }
+          ]
+        }
+      },
+      "id": "if-sobreturno-request",
+      "name": "¿Es solicitud de sobreturno?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 500]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CITAMEDICA_API_URL}}/appointments/available/{{DateTime.now().toISODate()}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "get-available-slots",
+      "name": "Obtener horarios disponibles",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [700, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CITAMEDICA_API_URL}}/sobreturnos/available/{{DateTime.now().toISODate()}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "get-available-sobreturnos",
+      "name": "Obtener sobreturnos disponibles",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [700, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatear horarios disponibles para WhatsApp\nconst availableSlots = $input.all()[0].json;\nconst from = $('Webhook - WhatsApp Message').first().json.from;\n\nif (!availableSlots.success || !availableSlots.data?.length) {\n  return [{\n    json: {\n      to: from,\n      message: 'No hay horarios disponibles para hoy. Por favor, intenta con otra fecha.',\n      type: 'no_slots'\n    }\n  }];\n}\n\nconst morningSlots = availableSlots.data.filter(slot => \n  slot.time >= '10:00' && slot.time <= '12:00' && slot.available\n);\nconst afternoonSlots = availableSlots.data.filter(slot => \n  slot.time >= '17:00' && slot.time <= '20:00' && slot.available\n);\n\nlet message = '📅 *HORARIOS DISPONIBLES*\\n\\n';\n\nif (morningSlots.length > 0) {\n  message += '🌅 *MAÑANA:*\\n';\n  morningSlots.forEach((slot, index) => {\n    message += `${index + 1}️⃣ ${slot.time}\\n`;\n  });\n}\n\nif (afternoonSlots.length > 0) {\n  message += '\\n🌆 *TARDE:*\\n';\n  afternoonSlots.forEach((slot, index) => {\n    message += `${morningSlots.length + index + 1}️⃣ ${slot.time}\\n`;\n  });\n}\n\nmessage += '\\nResponde con el número del horario que prefieres.';\n\nreturn [{\n  json: {\n    to: from,\n    message: message,\n    type: 'slot_selection',\n    slots: [...morningSlots, ...afternoonSlots]\n  }\n}];"
+      },
+      "id": "format-appointment-slots",
+      "name": "Formatear horarios",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatear sobreturnos disponibles para WhatsApp\nconst sobreturnos = $input.all()[0].json;\nconst from = $('Webhook - WhatsApp Message').first().json.from;\n\nif (!sobreturnos.success || !sobreturnos.data?.data?.disponibles?.length) {\n  return [{\n    json: {\n      to: from,\n      message: 'No hay sobreturnos disponibles para hoy.',\n      type: 'no_sobreturnos'\n    }\n  }];\n}\n\nconst disponibles = sobreturnos.data.data.disponibles;\nlet message = '🔄 *SOBRETURNOS DISPONIBLES HOY*\\n\\n';\n\ndisponibles.forEach((st, index) => {\n  message += `${index + 1}️⃣ ${st.horario} - Turno ${st.numero} (${st.turno})\\n`;\n});\n\nmessage += '\\n*Nota:* Los sobreturnos son atendidos por orden de llegada.\\n';\nmessage += 'Responde con el número del sobreturno que deseas.';\n\nreturn [{\n  json: {\n    to: from,\n    message: message,\n    type: 'sobreturno_selection',\n    sobreturnos: disponibles\n  }\n}];"
+      },
+      "id": "format-sobreturno-slots",
+      "name": "Formatear sobreturnos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 600]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.EVOLUTION_API_URL}}/message/sendText/{{$env.EVOLUTION_INSTANCE_NAME}}",
+        "sendBody": true,
+        "specifyHeaders": true,
+        "headers": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.EVOLUTION_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": false,
+        "sendHeaders": true,
+        "contentType": "json",
+        "body": "={\n  \"number\": \"{{$json.to.replace('@s.whatsapp.net', '').replace('+', '')}}\",\n  \"text\": \"{{$json.message}}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "send-whatsapp-response",
+      "name": "Enviar respuesta WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1180, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.type}}",
+              "value2": "appointment_created"
+            }
+          ]
+        }
+      },
+      "id": "if-appointment-created",
+      "name": "¿Cita creada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1420, 300]
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "minutes"
+      },
+      "id": "wait-5-minutes",
+      "name": "Esperar 5 minutos",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1640, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Crear mensaje de recordatorio\nconst appointment = $json.appointment;\nconst patient = $json.patient;\n\nconst reminderMessage = `🔔 *RECORDATORIO DE CITA*\\n\\n` +\n  `Hola ${patient.name},\\n\\n` +\n  `Te recordamos que tienes una cita médica:\\n\\n` +\n  `📅 **Fecha:** ${appointment.date}\\n` +\n  `⏰ **Hora:** ${appointment.time}\\n` +\n  `🏥 **Obra Social:** ${patient.socialWork}\\n\\n` +\n  `*Importante:* Llega 10 minutos antes de tu cita.\\n\\n` +\n  `¡Te esperamos! 🏥`;\n\nreturn [{\n  json: {\n    to: `${patient.phone}@s.whatsapp.net`,\n    message: reminderMessage,\n    type: 'reminder'\n  }\n}];"
+      },
+      "id": "create-reminder-message",
+      "name": "Crear mensaje recordatorio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1860, 200]
+    },
+    {
+      "parameters": {
+        "path": "appointment-created",
+        "options": {}
+      },
+      "id": "webhook-appointment-created",
+      "name": "Webhook - Cita Creada",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 800],
+      "webhookId": "appointment-created"
+    },
+    {
+      "parameters": {
+        "path": "sobreturno-created",
+        "options": {}
+      },
+      "id": "webhook-sobreturno-created",
+      "name": "Webhook - Sobreturno Creado",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 1000],
+      "webhookId": "sobreturno-created"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log de actividad para monitoreo\nconst activityData = {\n  timestamp: new Date().toISOString(),\n  type: $json.type || 'unknown',\n  from: $json.from,\n  message: $json.message,\n  processed: true\n};\n\nconsole.log('WhatsApp Activity Log:', JSON.stringify(activityData, null, 2));\n\nreturn [{ json: activityData }];"
+      },
+      "id": "log-activity",
+      "name": "Log Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1420, 600]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.message}}",
+              "operation": "contains",
+              "value2": "ayuda"
+            }
+          ]
+        }
+      },
+      "id": "if-help-request",
+      "name": "¿Solicita ayuda?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mensaje de ayuda\nconst from = $('Webhook - WhatsApp Message').first().json.from;\n\nconst helpMessage = `📋 *AYUDA - COMANDOS DISPONIBLES*\\n\\n` +\n  `🏥 *Para agendar citas:*\\n` +\n  `• \"cita\" o \"turno\" - Nueva cita médica\\n` +\n  `• \"sobreturno\" - Turno urgente\\n\\n` +\n  `🔍 *Para consultas:*\\n` +\n  `• \"ver citas\" - Consultar mis turnos\\n` +\n  `• \"ayuda\" - Mostrar esta ayuda\\n\\n` +\n  `⚙️ *Comandos generales:*\\n` +\n  `• \"hola\" - Volver al menú principal\\n` +\n  `• \"cancelar\" - Cancelar operación actual\\n\\n` +\n  `*Horarios de atención:*\\n` +\n  `🌅 Mañana: 10:00 - 12:00\\n` +\n  `🌆 Tarde: 17:00 - 20:00\\n\\n` +\n  `¿En qué puedo ayudarte?`;\n\nreturn [{\n  json: {\n    to: from,\n    message: helpMessage,\n    type: 'help'\n  }\n}];"
+      },
+      "id": "create-help-message",
+      "name": "Crear mensaje de ayuda",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 800]
+    }
+  ],
+  "connections": {
+    "Webhook - WhatsApp Message": {
+      "main": [
+        [
+          {
+            "node": "¿Es solicitud de cita?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Es solicitud de sobreturno?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Solicita ayuda?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es solicitud de cita?": {
+      "main": [
+        [
+          {
+            "node": "Obtener horarios disponibles",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "¿Es solicitud de sobreturno?": {
+      "main": [
+        [
+          {
+            "node": "Obtener sobreturnos disponibles",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Obtener horarios disponibles": {
+      "main": [
+        [
+          {
+            "node": "Formatear horarios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener sobreturnos disponibles": {
+      "main": [
+        [
+          {
+            "node": "Formatear sobreturnos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear horarios": {
+      "main": [
+        [
+          {
+            "node": "Enviar respuesta WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear sobreturnos": {
+      "main": [
+        [
+          {
+            "node": "Enviar respuesta WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar respuesta WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "¿Cita creada?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Cita creada?": {
+      "main": [
+        [
+          {
+            "node": "Esperar 5 minutos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Esperar 5 minutos": {
+      "main": [
+        [
+          {
+            "node": "Crear mensaje recordatorio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear mensaje recordatorio": {
+      "main": [
+        [
+          {
+            "node": "Enviar respuesta WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Cita Creada": {
+      "main": [
+        [
+          {
+            "node": "¿Cita creada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Solicita ayuda?": {
+      "main": [
+        [
+          {
+            "node": "Crear mensaje de ayuda",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Crear mensaje de ayuda": {
+      "main": [
+        [
+          {
+            "node": "Enviar respuesta WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Argentina/Buenos_Aires",
+    "saveExecutionProgress": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveDataManualExecution": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "error-handler-workflow"
+  },
+  "staticData": {},
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "whatsapp",
+      "name": "WhatsApp"
+    },
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "citas-medicas",
+      "name": "Citas Médicas"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

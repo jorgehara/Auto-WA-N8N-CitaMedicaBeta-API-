@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  # Solo el Bridge de integración
+  n8n-evolution-bridge:
+    build: .
+    container_name: n8n-evolution-bridge
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - CITAMEDICA_API_URL=https://micitamedica.me/api
+      - EVOLUTION_API_URL=http://69.62.89.195:8080
+      - N8N_WEBHOOK_URL=https://n8n.srv1100557.hstgr.cloud/webhook
+      - EVOLUTION_INSTANCE_NAME=f7f4f896-f376-4a2e-bc83-3c0f164ca850
+      - EVOLUTION_BASE_URL=http://69.62.89.195:8080
+      - CITAMEDICA_BASE_URL=https://micitamedica.me/api
+      - TIMEZONE=America/Argentina/Buenos_Aires
+      - LOG_LEVEL=debug
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - citamedica
+
+networks:
+  citamedica:
+    driver: bridge
