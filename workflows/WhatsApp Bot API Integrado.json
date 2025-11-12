@@ -1,0 +1,333 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-bot-api",
+        "options": {}
+      },
+      "id": "webhook-main",
+      "name": "Webhook WhatsApp",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [100, 200],
+      "webhookId": "whatsapp-bot-api"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== PROCESADOR PRINCIPAL DE MENSAJES CON ESTADOS =====\nconst data = $input.all()[0].json;\n\nconsole.log('Datos recibidos:', JSON.stringify(data, null, 2));\n\n// Extraer información del mensaje\nlet messageText = '';\nlet userNumber = '';\nlet userName = 'Usuario';\n\ntry {\n  if (data.body && data.body.data) {\n    messageText = data.body.data.message?.conversation || \n                  data.body.data.message?.extendedTextMessage?.text || '';\n    userNumber = data.body.data.key?.remoteJid?.replace('@s.whatsapp.net', '') || '';\n    userName = data.body.data.pushName || 'Usuario';\n  } else if (data.data) {\n    messageText = data.data.message?.conversation || \n                  data.data.message?.extendedTextMessage?.text || '';\n    userNumber = data.data.key?.remoteJid?.replace('@s.whatsapp.net', '') || '';\n    userName = data.data.pushName || 'Usuario';\n  } else {\n    messageText = 'hola';\n    userNumber = '5493735507036';\n  }\n} catch (error) {\n  console.log('Error procesando datos:', error);\n  messageText = 'hola';\n  userNumber = '5493735507036';\n  userName = 'Usuario';\n}\n\nconst normalizedMessage = messageText.toLowerCase().trim();\n\n// ===== SISTEMA DE ESTADOS =====\n// Simulamos un estado por usuario (en producción esto debería estar en una DB)\nconst userStates = $workflow.static.userStates || {};\nconst currentState = userStates[userNumber] || { state: 'menu', data: {} };\n\nlet responseData = {\n  userNumber,\n  userName,\n  messageText,\n  normalizedMessage,\n  currentState: currentState.state,\n  stateData: currentState.data,\n  action: 'send_message', // default action\n  needsAPICall: false,\n  apiEndpoint: '',\n  apiData: {}\n};\n\n// ===== LÓGICA DE ESTADOS =====\nswitch (currentState.state) {\n  case 'menu':\n  case 'initial':\n    if (normalizedMessage.includes('hola') || normalizedMessage.includes('hi') || normalizedMessage === '') {\n      responseData.responseText = `🤖 ¡Hola ${userName}! 👋\\n\\nSoy Anita, tu asistente médica virtual.\\n\\n📋 ¿En qué puedo ayudarte?\\n\\n🟢 Escribe *1* para agendar una cita\\n🟢 Escribe *2* para ver horarios disponibles\\n🟢 Escribe *3* para información de contacto\\n🟢 Escribe *menu* para volver aquí`;\n      currentState.state = 'waiting_menu_option';\n    } else if (normalizedMessage.includes('1') || normalizedMessage.includes('cita') || normalizedMessage.includes('agendar')) {\n      responseData.responseText = `📅 *Perfecto! Vamos a agendar tu cita* ✅\\n\\nPara comenzar, necesito algunos datos:\\n\\n👤 **Paso 1 de 5: Nombre completo**\\n\\nPor favor escribe tu nombre completo:`;\n      currentState.state = 'collecting_name';\n      currentState.data = {};\n    } else if (normalizedMessage.includes('2') || normalizedMessage.includes('horarios')) {\n      responseData.responseText = `📅 *Consulta de Horarios Disponibles*\\n\\nPor favor envíame la fecha en formato DD/MM/AAAA\\n\\nEjemplo: 15/12/2024\\n\\n💡 Tip: Solo consulto horarios de lunes a sábado`;\n      currentState.state = 'asking_date_for_availability';\n    } else if (normalizedMessage.includes('3') || normalizedMessage.includes('contacto')) {\n      responseData.responseText = `📞 *Información de Contacto*\\n\\n🏥 **Consultorio Médico**\\n📍 Dirección: [Tu dirección aquí]\\n☎️ Teléfono: [Tu teléfono]\\n🕒 Horarios de Atención:\\n\\n📅 **Lunes a Viernes:**\\n🌅 Mañana: 10:00 - 12:00\\n🌆 Tarde: 17:00 - 20:00\\n\\n📅 **Sábados:**\\n🌅 Mañana: 10:00 - 12:00\\n\\n❌ **Domingos:** Cerrado\\n\\n💻 Web: https://micitamedica.me\\n📱 WhatsApp: Este número\\n\\nEscribe *menu* para volver al menú principal`;\n      currentState.state = 'waiting_menu_option';\n    } else {\n      responseData.responseText = `🤔 No entendí tu mensaje: \"${messageText}\"\\n\\n📋 Opciones disponibles:\\n\\n🟢 Escribe *1* para agendar una cita\\n🟢 Escribe *2* para ver horarios\\n🟢 Escribe *3* para información de contacto\\n🟢 Escribe *menu* para el menú principal`;\n      currentState.state = 'waiting_menu_option';\n    }\n    break;\n\n  case 'waiting_menu_option':\n    if (normalizedMessage.includes('1') || normalizedMessage.includes('cita')) {\n      responseData.responseText = `📅 *Perfecto! Vamos a agendar tu cita* ✅\\n\\nPara comenzar, necesito algunos datos:\\n\\n👤 **Paso 1 de 5: Nombre completo**\\n\\nPor favor escribe tu nombre completo:`;\n      currentState.state = 'collecting_name';\n      currentState.data = {};\n    } else if (normalizedMessage.includes('2') || normalizedMessage.includes('horarios')) {\n      responseData.responseText = `📅 *Consulta de Horarios Disponibles*\\n\\nPor favor envíame la fecha en formato DD/MM/AAAA\\n\\nEjemplo: 15/12/2024`;\n      currentState.state = 'asking_date_for_availability';\n    } else if (normalizedMessage.includes('3') || normalizedMessage.includes('contacto')) {\n      responseData.responseText = `📞 *Información de Contacto*\\n\\n🏥 **Consultorio Médico**\\n📍 Dirección: [Tu dirección]\\n☎️ Teléfono: [Tu teléfono]\\n🕒 Horarios: Lunes a Viernes 10:00-12:00, 17:00-20:00\\nSábados: 10:00-12:00\\n\\n💻 Web: https://micitamedica.me\\n\\nEscribe *menu* para volver al menú principal`;\n      currentState.state = 'waiting_menu_option';\n    } else if (normalizedMessage.includes('menu')) {\n      responseData.responseText = `📋 *Menú Principal*\\n\\n🟢 Escribe *1* para agendar una cita\\n🟢 Escribe *2* para ver horarios disponibles\\n🟢 Escribe *3* para información de contacto`;\n      currentState.state = 'waiting_menu_option';\n    } else {\n      responseData.responseText = `🤔 Opción no válida.\\n\\n📋 Opciones disponibles:\\n\\n🟢 *1* - Agendar cita\\n🟢 *2* - Ver horarios\\n🟢 *3* - Contacto\\n🟢 *menu* - Menú principal`;\n    }\n    break;\n\n  case 'asking_date_for_availability':\n    // Validar formato de fecha DD/MM/AAAA\n    const dateMatch = messageText.match(/(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})/);\n    if (dateMatch) {\n      const [, day, month, year] = dateMatch;\n      const requestedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;\n      \n      responseData.needsAPICall = true;\n      responseData.action = 'get_available_times';\n      responseData.apiEndpoint = `/api/appointments/available/${requestedDate}`;\n      responseData.requestedDate = requestedDate;\n      responseData.displayDate = `${day}/${month}/${year}`;\n      currentState.state = 'waiting_menu_option';\n    } else {\n      responseData.responseText = `❌ Formato de fecha incorrecto.\\n\\nPor favor usa el formato: DD/MM/AAAA\\n\\nEjemplo: 15/12/2024\\n\\nIntenta nuevamente:`;\n    }\n    break;\n\n  case 'collecting_name':\n    if (messageText.trim().length >= 3) {\n      currentState.data.clientName = messageText.trim();\n      responseData.responseText = `✅ Nombre: ${messageText.trim()}\\n\\n📱 **Paso 2 de 5: Teléfono**\\n\\nPor favor escribe tu número de teléfono\\n(puede ser el mismo desde donde escribes):`;\n      currentState.state = 'collecting_phone';\n    } else {\n      responseData.responseText = `❌ El nombre debe tener al menos 3 caracteres.\\n\\nPor favor escribe tu nombre completo:`;\n    }\n    break;\n\n  case 'collecting_phone':\n    const phonePattern = /^[\\d\\s\\-\\+\\(\\)]{7,}$/;\n    if (phonePattern.test(messageText.trim()) || messageText.trim().length >= 7) {\n      currentState.data.phone = messageText.trim();\n      responseData.responseText = `✅ Teléfono: ${messageText.trim()}\\n\\n🏥 **Paso 3 de 5: Obra Social**\\n\\nSelecciona tu obra social:\\n\\n1️⃣ INSSSEP\\n2️⃣ Swiss Medical\\n3️⃣ OSDE\\n4️⃣ Galeno\\n5️⃣ Consulta Particular\\n6️⃣ Otras Obras Sociales\\n\\nEscribe el número de tu opción:`;\n      currentState.state = 'collecting_social_work';\n    } else {\n      responseData.responseText = `❌ Formato de teléfono incorrecto.\\n\\nPor favor escribe un número de teléfono válido:`;\n    }\n    break;\n\n  case 'collecting_social_work':\n    const socialWorkOptions = {\n      '1': 'INSSSEP',\n      '2': 'Swiss Medical', \n      '3': 'OSDE',\n      '4': 'Galeno',\n      '5': 'CONSULTA PARTICULAR',\n      '6': 'Otras Obras Sociales'\n    };\n    \n    if (socialWorkOptions[normalizedMessage]) {\n      currentState.data.socialWork = socialWorkOptions[normalizedMessage];\n      responseData.responseText = `✅ Obra Social: ${socialWorkOptions[normalizedMessage]}\\n\\n📧 **Paso 4 de 5: Email (opcional)**\\n\\nEscribe tu email o envía \"sin email\" para continuar:`;\n      currentState.state = 'collecting_email';\n    } else {\n      responseData.responseText = `❌ Opción no válida.\\n\\nPor favor selecciona un número del 1 al 6:\\n\\n1️⃣ INSSSEP\\n2️⃣ Swiss Medical\\n3️⃣ OSDE\\n4️⃣ Galeno\\n5️⃣ Consulta Particular\\n6️⃣ Otras Obras Sociales`;\n    }\n    break;\n\n  case 'collecting_email':\n    if (normalizedMessage.includes('sin email') || normalizedMessage.includes('no')) {\n      currentState.data.email = '';\n      responseData.responseText = `✅ Email: No proporcionado\\n\\n📅 **Paso 5 de 5: Seleccionar fecha**\\n\\nEscribe la fecha deseada en formato DD/MM/AAAA\\n\\nEjemplo: 15/12/2024\\n\\n💡 Atención de lunes a sábado`;\n      currentState.state = 'collecting_date';\n    } else {\n      const emailPattern = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n      if (emailPattern.test(messageText.trim())) {\n        currentState.data.email = messageText.trim();\n        responseData.responseText = `✅ Email: ${messageText.trim()}\\n\\n📅 **Paso 5 de 5: Seleccionar fecha**\\n\\nEscribe la fecha deseada en formato DD/MM/AAAA\\n\\nEjemplo: 15/12/2024\\n\\n💡 Atención de lunes a sábado`;\n        currentState.state = 'collecting_date';\n      } else {\n        responseData.responseText = `❌ Email no válido.\\n\\nEjemplo: usuario@email.com\\n\\nO escribe \"sin email\" para continuar:`;\n      }\n    }\n    break;\n\n  case 'collecting_date':\n    const appointmentDateMatch = messageText.match(/(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})/);\n    if (appointmentDateMatch) {\n      const [, day, month, year] = appointmentDateMatch;\n      const appointmentDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;\n      \n      // Validar que la fecha no sea en el pasado\n      const today = new Date();\n      const selectedDate = new Date(appointmentDate);\n      \n      if (selectedDate < today) {\n        responseData.responseText = `❌ No puedes agendar citas en fechas pasadas.\\n\\nPor favor selecciona una fecha futura (DD/MM/AAAA):`;\n        break;\n      }\n      \n      currentState.data.date = appointmentDate;\n      currentState.data.displayDate = `${day}/${month}/${year}`;\n      \n      responseData.needsAPICall = true;\n      responseData.action = 'get_available_times_for_booking';\n      responseData.apiEndpoint = `/api/appointments/available/${appointmentDate}`;\n      responseData.requestedDate = appointmentDate;\n      currentState.state = 'selecting_time';\n    } else {\n      responseData.responseText = `❌ Formato de fecha incorrecto.\\n\\nUsa el formato: DD/MM/AAAA\\nEjemplo: 15/12/2024\\n\\nIntenta nuevamente:`;\n    }\n    break;\n\n  case 'selecting_time':\n    // El usuario seleccionó un horario\n    if (currentState.data.availableTimes && currentState.data.availableTimes.includes(messageText.trim())) {\n      currentState.data.time = messageText.trim();\n      \n      // Preparar datos para crear la cita\n      responseData.needsAPICall = true;\n      responseData.action = 'create_appointment';\n      responseData.apiEndpoint = '/api/appointments';\n      responseData.apiData = {\n        clientName: currentState.data.clientName,\n        phone: currentState.data.phone,\n        socialWork: currentState.data.socialWork,\n        email: currentState.data.email || '',\n        date: currentState.data.date,\n        time: currentState.data.time,\n        isSobreturno: false\n      };\n      \n      currentState.state = 'appointment_created';\n    } else {\n      responseData.responseText = `❌ Horario no válido o no disponible.\\n\\nPor favor selecciona uno de los horarios mostrados anteriormente, copiando exactamente el formato (ej: 10:00)`;\n    }\n    break;\n\n  default:\n    responseData.responseText = `🤔 Ha ocurrido un error con el estado de la conversación.\\n\\nEscribe *menu* para volver al menú principal.`;\n    currentState.state = 'waiting_menu_option';\n}\n\n// Guardar el estado actualizado\nif (!$workflow.static.userStates) {\n  $workflow.static.userStates = {};\n}\n$workflow.static.userStates[userNumber] = currentState;\n\nreturn { json: responseData };"
+      },
+      "id": "message-processor",
+      "name": "Procesador de Mensajes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [300, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "needs_api",
+              "leftValue": "={{ $json.needsAPICall }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "decision-api",
+      "name": "¿Necesita API?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is_create",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "create_appointment",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "singleValue": true
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "decision-create-appointment",
+      "name": "¿Crear Cita?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [700, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "backend_url",
+              "name": "backendUrl",
+              "value": "http://localhost:3001",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-backend-config",
+      "name": "Configuración Backend",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [900, 100]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configuración Backend').item.json.backendUrl + $json.apiEndpoint }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "api-call-get",
+      "name": "API Call GET",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1100, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración Backend').item.json.backendUrl + $json.apiEndpoint }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.apiData) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "api-call-post",
+      "name": "API Call POST",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar respuesta de la API y generar mensaje apropiado\nconst inputData = $input.all()[0].json;\nconst apiResponse = $input.all()[1].json;\n\nconsole.log('Procesando respuesta API:', JSON.stringify(apiResponse, null, 2));\nconsole.log('Datos del procesador:', JSON.stringify(inputData, null, 2));\n\nlet responseText = '';\nlet updatedStateData = inputData.stateData || {};\n\n// Procesar según el tipo de acción\nswitch (inputData.action) {\n  case 'get_available_times':\n  case 'get_available_times_for_booking':\n    if (apiResponse.success && apiResponse.data) {\n      const { morning, afternoon } = apiResponse.data.available;\n      \n      // Filtrar solo horarios disponibles\n      const availableMorning = morning.filter(slot => slot.status === 'available');\n      const availableAfternoon = afternoon.filter(slot => slot.status === 'available');\n      \n      if (availableMorning.length === 0 && availableAfternoon.length === 0) {\n        responseText = `❌ No hay horarios disponibles para el ${inputData.displayDate || inputData.requestedDate}\\n\\nPor favor selecciona otra fecha o escribe *menu* para volver al menú principal.`;\n      } else {\n        if (inputData.action === 'get_available_times') {\n          // Solo consulta de horarios\n          responseText = `📅 *Horarios disponibles para ${inputData.displayDate}*\\n\\n`;\n          \n          if (availableMorning.length > 0) {\n            responseText += `🌅 **MAÑANA:**\\n`;\n            availableMorning.forEach(slot => {\n              responseText += `• ${slot.time}\\n`;\n            });\n            responseText += '\\n';\n          }\n          \n          if (availableAfternoon.length > 0) {\n            responseText += `🌆 **TARDE:**\\n`;\n            availableAfternoon.forEach(slot => {\n              responseText += `• ${slot.time}\\n`;\n            });\n            responseText += '\\n';\n          }\n          \n          responseText += `💡 Para agendar una cita escribe *1* o *cita*\\n\\nEscribe *menu* para volver al menú principal.`;\n        } else {\n          // Para agendar cita - mostrar horarios seleccionables\n          responseText = `📅 *Horarios disponibles para ${inputData.stateData.displayDate}*\\n\\n`;\n          responseText += `✅ **Selecciona un horario** escribiendo la hora exacta:\\n\\n`;\n          \n          const allAvailable = [];\n          \n          if (availableMorning.length > 0) {\n            responseText += `🌅 **MAÑANA:**\\n`;\n            availableMorning.forEach(slot => {\n              responseText += `• ${slot.time}\\n`;\n              allAvailable.push(slot.time);\n            });\n            responseText += '\\n';\n          }\n          \n          if (availableAfternoon.length > 0) {\n            responseText += `🌆 **TARDE:**\\n`;\n            availableAfternoon.forEach(slot => {\n              responseText += `• ${slot.time}\\n`;\n              allAvailable.push(slot.time);\n            });\n            responseText += '\\n';\n          }\n          \n          responseText += `📝 **Ejemplo:** Escribe *10:00* para seleccionar las 10:00\\n\\n⬅️ O escribe *menu* para cancelar y volver al menú principal.`;\n          \n          // Guardar los horarios disponibles en el estado\n          updatedStateData.availableTimes = allAvailable;\n        }\n      }\n    } else {\n      responseText = `❌ Error al consultar horarios disponibles.\\n\\nPor favor intenta nuevamente o escribe *menu* para volver al menú principal.`;\n    }\n    break;\n    \n  case 'create_appointment':\n    if (apiResponse.success && apiResponse.data) {\n      const appointment = apiResponse.data;\n      responseText = `🎉 **¡Cita agendada exitosamente!** ✅\\n\\n`;\n      responseText += `📋 **Resumen de tu cita:**\\n\\n`;\n      responseText += `👤 **Paciente:** ${appointment.clientName}\\n`;\n      responseText += `📱 **Teléfono:** ${appointment.phone}\\n`;\n      responseText += `🏥 **Obra Social:** ${appointment.socialWork}\\n`;\n      if (appointment.email) {\n        responseText += `📧 **Email:** ${appointment.email}\\n`;\n      }\n      responseText += `📅 **Fecha:** ${inputData.stateData.displayDate}\\n`;\n      responseText += `🕒 **Horario:** ${appointment.time}\\n\\n`;\n      responseText += `📍 **Dirección:** [Tu dirección del consultorio]\\n\\n`;\n      responseText += `⚠️ **Importante:**\\n`;\n      responseText += `• Llega 10 minutos antes\\n`;\n      responseText += `• Trae DNI y credencial de obra social\\n`;\n      responseText += `• Para cancelar o reprogramar, contacta al consultorio\\n\\n`;\n      responseText += `🤖 Escribe *menu* para realizar otra acción.`;\n      \n      // Resetear el estado del usuario\n      updatedStateData = {};\n    } else {\n      responseText = `❌ Error al agendar la cita: ${apiResponse.message || 'Error desconocido'}\\n\\n`;\n      \n      if (apiResponse.message && apiResponse.message.includes('no está disponible')) {\n        responseText += `El horario seleccionado ya fue ocupado por otro paciente.\\n\\nPor favor selecciona otro horario o escribe *menu* para volver al menú principal.`;\n      } else {\n        responseText += `Por favor intenta nuevamente o contacta al consultorio.\\n\\nEscribe *menu* para volver al menú principal.`;\n        updatedStateData = {};\n      }\n    }\n    break;\n    \n  default:\n    responseText = 'Error: Acción no reconocida';\n}\n\nreturn {\n  json: {\n    userNumber: inputData.userNumber,\n    responseText,\n    action: 'send_message',\n    updatedStateData\n  }\n};"
+      },
+      "id": "api-response-processor",
+      "name": "Procesar Respuesta API",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Actualizar estado del usuario después de respuesta API\nconst inputData = $input.all()[0].json;\n\n// Actualizar estado si es necesario\nif (inputData.updatedStateData && inputData.userNumber) {\n  const userStates = $workflow.static.userStates || {};\n  \n  if (Object.keys(inputData.updatedStateData).length === 0) {\n    // Resetear estado\n    userStates[inputData.userNumber] = { state: 'waiting_menu_option', data: {} };\n  } else {\n    // Actualizar datos del estado\n    if (userStates[inputData.userNumber]) {\n      userStates[inputData.userNumber].data = { ...userStates[inputData.userNumber].data, ...inputData.updatedStateData };\n    }\n  }\n  \n  $workflow.static.userStates = userStates;\n}\n\nreturn {\n  json: {\n    userNumber: inputData.userNumber,\n    responseText: inputData.responseText\n  }\n};"
+      },
+      "id": "update-state",
+      "name": "Actualizar Estado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1500, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://69.62.89.195:8080/message/sendText/test-9-1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "C7F8CA2C0390-44DA-8307-8DADE95C74F9"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": $json.userNumber,\n  \"text\": $json.responseText\n}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "send-whatsapp-message",
+      "name": "Enviar Respuesta WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1700, 200]
+    }
+  ],
+  "connections": {
+    "Webhook WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Procesador de Mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesador de Mensajes": {
+      "main": [
+        [
+          {
+            "node": "¿Necesita API?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Necesita API?": {
+      "main": [
+        [
+          {
+            "node": "¿Crear Cita?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Actualizar Estado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Crear Cita?": {
+      "main": [
+        [
+          {
+            "node": "Configuración Backend",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Configuración Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuración Backend": {
+      "main": [
+        [
+          {
+            "node": "API Call GET",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "API Call POST",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Call GET": {
+      "main": [
+        [
+          {
+            "node": "Procesar Respuesta API",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "API Call POST": {
+      "main": [
+        [
+          {
+            "node": "Procesar Respuesta API",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Procesar Respuesta API": {
+      "main": [
+        [
+          {
+            "node": "Actualizar Estado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar Estado": {
+      "main": [
+        [
+          {
+            "node": "Enviar Respuesta WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "4b0e4fb3c0e1adf4b413121f19aa866d99097fee1dc6f83b5adf98daaf88b09f"
+  }
+}
