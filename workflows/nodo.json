@@ -1,0 +1,13 @@
+{
+  "parameters": {
+    "jsCode": "// Intenta parsear la respuesta de la API como JSON.\n// Si falla, devuelve un objeto de error amigable.\n\nlet raw = $input.item.body || $input.item.text || $input.item.json || '';\nlet apiResponse;\n\ntry {\n  if (typeof raw === 'string') {\n    apiResponse = JSON.parse(raw);\n  } else {\n    apiResponse = raw;\n  }\n} catch (e) {\n  apiResponse = {\n    success: false,\n    message: 'La respuesta de la API no es un JSON válido.',\n    raw: raw\n  };\n}\n\nreturn {\n  json: apiResponse\n};"
+  },
+  "id": "parsear-respuesta-api",
+  "name": "Parsear Respuesta API",
+  "type": "n8n-nodes-base.code",
+  "typeVersion": 2,
+  "position": [
+    1016,
+    -720
+  ]
+}
