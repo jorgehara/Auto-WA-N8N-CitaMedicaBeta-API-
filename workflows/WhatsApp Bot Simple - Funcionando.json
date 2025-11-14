@@ -136,7 +136,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.apiData) }}",
+        "jsonBody": "={\n  \"jsonBody\": \"={{ $json.apiData || {} }}\"\n}",
         "options": {
           "response": {
             "response": {
@@ -182,7 +182,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Actualizar estado del usuario después de respuesta API\nconst inputData = $input.all()[0].json;\n// Limpiar y validar el número de WhatsApp\nlet userNumber = inputData.userNumber || '';\nif (typeof userNumber === 'string') {\n  userNumber = userNumber.replace('@s.whatsapp.net', '');\n}\nif (!userNumber) userNumber = '5493735507036';\n// Inicializar $workflow.static y $workflow.static.userStates si no existen\nif (typeof $workflow.static !== 'object' || !$workflow.static) {\n  $workflow.static = {};\n}\nif (typeof $workflow.static.userStates !== 'object' || !$workflow.static.userStates) {\n  $workflow.static.userStates = {};\n}\nconst userStates = $workflow.static.userStates;\nif (inputData.updatedStateData && userNumber) {\n  if (Object.keys(inputData.updatedStateData).length === 0) {\n    // Resetear estado\n    userStates[userNumber] = { state: 'waiting_menu_option', data: {} };\n  } else {\n    // Actualizar datos del estado\n    if (!userStates[userNumber]) {\n      userStates[userNumber] = { state: 'waiting_menu_option', data: {} };\n    }\n    userStates[userNumber].data = { ...userStates[userNumber].data, ...inputData.updatedStateData };\n  }\n  $workflow.static.userStates = userStates;\n}\nreturn {\n  json: {\n    userNumber,\n    responseText: inputData.responseText\n  }\n};"
+        "jsCode": "// Actualizar estado del usuario después de respuesta API\nconst inputData = $input.all()[0].json;\n\n// Limpiar y validar el número de WhatsApp\nlet userNumber = inputData.userNumber || '';\nif (typeof userNumber === 'string') {\n  userNumber = userNumber.replace('@s.whatsapp.net', '');\n}\nif (!userNumber) userNumber = '5493735507036';\n\n// No usar context ni global, solo lógica local\n// Si necesitas guardar el estado, hazlo en una base de datos externa\n\nreturn {\n  json: {\n    userNumber,\n    responseText: inputData.responseText\n  }\n};"
       },
       "id": "4371d6da-e947-4fe8-843d-cd36216cbaf0",
       "name": "Actualizar Estado",
